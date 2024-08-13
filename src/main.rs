@@ -1,4 +1,5 @@
 mod server;
+mod kv_store;
 
 #[tokio::main]
 async fn main() {
