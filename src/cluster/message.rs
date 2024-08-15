@@ -6,5 +6,8 @@ pub enum Message {
     LeaderAnnouncement(String),
     Vote(String),
     Error(String),
-    Ping(String)
+    Ping(String),
+    Set(String, String),
+    Delete(String),
+    Get(String),
 }

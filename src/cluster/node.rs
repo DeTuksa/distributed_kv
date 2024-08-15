@@ -2,7 +2,6 @@ use crate::kv_store::store::KeyValueStore;
 use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Arc;
-use tokio::time::{sleep, Duration};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -64,9 +63,9 @@ impl Node {
         Ok(())
     }
 
-    pub async fn set_leader(&mut self, is_leader: bool) {
-        self.is_leader = Arc::new(Mutex::new(is_leader));
-    }
+    // pub async fn set_leader(&mut self, is_leader: bool) {
+    //     self.is_leader = Arc::new(Mutex::new(is_leader));
+    // }
 
     // pub fn is_leader(&self) -> bool {
     //     tokio::task::block_in_place(|| *self.is_leader.lock())
@@ -93,8 +92,7 @@ impl Node {
             let vote_request = Message::VoteRequest(self.id.clone());
             self.send_message(node_addr, &vote_request).await?;
         }
-
-        sleep(Duration::from_secs(2)).await;
+        // sleep(Duration::from_secs(2)).await;
 
         let votes = self.votes.lock().await;
         let known_nodes_count = known_nodes.len();
@@ -184,6 +182,27 @@ impl Node {
                                     self_clone.handle_vote(vote_id).await.unwrap();
                                 });
                             }
+                            Message::Set(key, val) => {
+                                println!("Received SET operation for key {}", key);
+                                let self_clone = Arc::clone(&self);
+                                tokio::spawn(async move {
+                                    self_clone.handle_replication_message(Message::Set(key, val)).await.unwrap();
+                                });
+                            }
+                            Message::Delete(key) => {
+                                println!("Received DELETE operation for key {}", key);
+                                let self_clone = Arc::clone(&self);
+                                tokio::spawn(async move {
+                                    self_clone.handle_replication_message(Message::Delete(key)).await.unwrap();
+                                });
+                            }
+                            Message::Get(key) => {
+                                println!("Received GET operation for key {}", key);
+                                let self_clone = Arc::clone(&self);
+                                tokio::spawn(async move {
+                                    self_clone.handle_replication_message(Message::Get(key)).await.unwrap();
+                                });
+                            }
                             Message::Error(error) => {
                                 println!("Error occured {}" , error);
                             }
@@ -198,6 +217,40 @@ impl Node {
                 }
             }
         }
+    }
+
+    pub async fn handle_write_request(
+        &self, key: String, value: String
+    ) -> Result<(), Box<dyn Error>> {
+        self.store.set(key.clone(), value.clone()).await;
+
+        let known_nodes = self.known_nodes.lock().await;
+        for (_, node_addr) in known_nodes.iter()  {
+            let message = Message::Set(key.clone(), value.clone());
+            self.send_message(&node_addr, &message).await?;
+        }
+
+        Ok(())
+    }
+    async fn handle_replication_message(
+        &self, message: Message
+    ) -> Result<(), Box<dyn Error>> {
+
+        match message {
+            Message::Set(key, value) => {
+                self.store.set(key, value).await;
+            }
+            Message::Delete(key) => {
+                self.store.delete(&key).await;
+            }
+            Message::Get(key) => {
+                self.store.get(key).await;
+            }
+            _ => {
+                return Err("Unknown message type".into());
+            }
+        }
+        Ok(())
     }
 }
 

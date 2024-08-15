@@ -44,6 +44,15 @@ async fn main() {
         node1_clone.start_election().await.unwrap();
     });
 
+    sleep(Duration::from_secs(2)).await;
+    
+    let key = "key1".to_string();
+    let value = "value1".to_string();
+    let node1_clone = Arc::clone(&node1);
+    task::spawn(async move {
+        node1_clone.handle_write_request(key, value).await.unwrap();
+    });
+
     loop {
         sleep(Duration::from_secs(10)).await;
     }
